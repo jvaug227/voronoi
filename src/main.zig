@@ -9,9 +9,10 @@ const Point = struct {
     x: f32,
     y: f32,
 };
-const GRID_WIDTH = 512;
-const GRID_HEIGHT = 512;
-const POINT_COUNT = 8;
+const GRID_WIDTH = 1024;
+const GRID_HEIGHT = 1024;
+const POINT_COUNT = 32;
+const POINT_THRESHOLD = 0.005;
 
 fn write_pixels_to_file(pixels: []Pixel, width: usize, height: usize, name: []const u8) !void {
     const out_file = try std.fs.cwd().createFile(name, .{ .truncate = true });
@@ -65,15 +66,14 @@ pub fn main() !void {
                     min_point = idx;
                 }
             }
-            // if (min_distance <= 0.005) {
-            //     pixel_buffer[x + y * GRID_WIDTH] = Pixel{ .r = 0, .g = 0, .b = 255 };
-            // } else {
-            const red: f32 = 255.0 * (1.0 - min_distance);
-            const green: f32 = 255.0 * @as(f32, @floatFromInt(min_point)) / @as(f32, @floatFromInt(POINT_COUNT));
-            const blue_modifier: f32 = if (min_distance < 0.005) 1.0 else 0.0;
+
+            const blue_modifier: f32 = if (min_distance <= POINT_THRESHOLD) 1.0 else 0.0;
             const blue: f32 = 255.0 * blue_modifier;
+
+            const red: f32 = 255.0 * (1.0 - min_distance) * (1.0 - blue_modifier);
+            const green: f32 = 255.0 * @as(f32, @floatFromInt(min_point)) / @as(f32, @floatFromInt(POINT_COUNT)) * (1.0 - blue_modifier);
+
             pixel_buffer[x + y * GRID_WIDTH] = Pixel{ .r = @intFromFloat(red), .g = @intFromFloat(green), .b = @intFromFloat(blue) };
-            // }
         }
     }
 
