@@ -6,11 +6,11 @@ const Pixel = struct {
     b: u8,
 };
 const Point = struct {
-    x: u32,
-    y: u32,
+    x: f32,
+    y: f32,
 };
-const GRID_WIDTH = 256;
-const GRID_HEIGHT = 256;
+const GRID_WIDTH = 512;
+const GRID_HEIGHT = 512;
 const POINT_COUNT = 8;
 
 fn write_pixels_to_file(pixels: []Pixel, width: usize, height: usize, name: []const u8) !void {
@@ -45,22 +45,26 @@ pub fn main() !void {
     var prng = std.Random.DefaultPrng.init(rand_seed);
     const rand = prng.random();
     for (points) |*point| {
-        point.x = rand.int(u8);
-        point.y = rand.int(u8);
-        std.log.info("Point: {} {}", .{point.x, point.y});
+        point.x = rand.float(f32);
+        point.y = rand.float(f32);
+        std.log.info("Point: {d} {d}", .{point.x, point.y});
     }
 
     for (0..GRID_HEIGHT) |y| {
         for (0..GRID_WIDTH) |x| {
             var min_distance: usize = 1000;
+            const fx: f32 = @floatFromInt(x);
+            const fy: f32 = @floatFromInt(y);
             for (points) |point| {
-                const distance_to_point = (@max(x, point.x) - @min(x, point.x)) + @abs(@max(y, point.y) - @min(y, point.y));
+                const px: f32 = @floor(point.x * @as(f32, @floatFromInt(GRID_WIDTH)));
+                const py: f32 = @floor(point.y * @as(f32, @floatFromInt(GRID_HEIGHT)));
+                const distance_to_point: usize = @intFromFloat(@abs(fx - px) + @abs(fy - py));
                 min_distance = @min(min_distance, distance_to_point);
             }
             if (min_distance <= 2) {
                 pixel_buffer[x + y * GRID_WIDTH] = Pixel{ .r = 0, .g = 0, .b = 255 };
             } else {
-                pixel_buffer[x + y * GRID_WIDTH] = Pixel{ .r = @truncate(x), .g = @truncate(y), .b = 0 };
+                pixel_buffer[x + y * GRID_WIDTH] = Pixel{ .r = 50, .g = 20, .b = 20 };
             }
         }
     }
