@@ -18,7 +18,9 @@ fn write_pixels_to_file(pixels: []Pixel, width: usize, height: usize, name: []co
     const out_file = try std.fs.cwd().createFile(name, .{ .truncate = true });
     defer out_file.close();
 
-    const writer = out_file.writer();
+    // const writer = out_file.writer();
+    var buf_writer = std.io.bufferedWriter(out_file.writer());
+    const writer = buf_writer.writer();
     try writer.print("P6 {} {} 255\n", .{ width, height });
     for (0..height) |y| {
         for (0..width) |x| {
@@ -26,6 +28,7 @@ fn write_pixels_to_file(pixels: []Pixel, width: usize, height: usize, name: []co
             try writer.print("{c}{c}{c}", .{ pixel.r, pixel.g, pixel.b });
         }
     }
+    try buf_writer.flush();
 }
 
 pub fn main() !void {
@@ -52,17 +55,17 @@ pub fn main() !void {
     defer alloc.free(pixel_buffer);
 
     for (0..GRID_HEIGHT) |y| {
+        const fy: f32 = @as(f32, @floatFromInt(y)) / @as(f32, @floatFromInt(GRID_HEIGHT));
         for (0..GRID_WIDTH) |x| {
+            const fx: f32 = @as(f32, @floatFromInt(x)) / @as(f32, @floatFromInt(GRID_WIDTH));
             var min_distance: f32 = 1.0;
             var min_point: usize = 0;
-            const fx: f32 = @as(f32, @floatFromInt(x)) / @as(f32, @floatFromInt(GRID_WIDTH));
-            const fy: f32 = @as(f32, @floatFromInt(y)) / @as(f32, @floatFromInt(GRID_HEIGHT));
             for (0.., points) |idx, point| {
                 const px: f32 = point.x;
                 const py: f32 = point.y;
-                const distance_to_point = @sqrt(std.math.pow(f32, @abs(fx - px), 2.0) + std.math.pow(f32, @abs(fy - py), 2.0));
-                if (distance_to_point < min_distance) {
-                    min_distance = distance_to_point;
+                const sq_distance_to_point = (std.math.pow(f32, @abs(fx - px), 2.0) + std.math.pow(f32, @abs(fy - py), 2.0));
+                if (sq_distance_to_point < (min_distance * min_distance)) {
+                    min_distance = @sqrt(sq_distance_to_point);
                     min_point = idx;
                 }
             }
@@ -76,6 +79,7 @@ pub fn main() !void {
             pixel_buffer[x + y * GRID_WIDTH] = Pixel{ .r = @intFromFloat(red), .g = @intFromFloat(green), .b = @intFromFloat(blue) };
         }
     }
+    std.log.info("FINISHED_GENERATING", .{});
 
     write_pixels_to_file(pixel_buffer, GRID_WIDTH, GRID_HEIGHT, "output.ppm") catch |err| {
         std.log.err("Failed to write file: {}", .{err});
