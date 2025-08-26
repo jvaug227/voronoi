@@ -1,119 +1,71 @@
-//! By convention, main.zig is where your main function lives in the case that
-//! you are building an executable. If you are making a library, the convention
-//! is to delete this file and start with root.zig instead.
-
 const std = @import("std");
-const mach = @import("mach");
-const gpu = mach.gpu;
 
-const App = @This();
-pub const Modules = mach.Modules(.{
-    mach.Core,
-    App,
-});
+const Pixel = struct {
+    r: u8,
+    g: u8,
+    b: u8,
+};
+const Point = struct {
+    x: u32,
+    y: u32,
+};
+const GRID_WIDTH = 256;
+const GRID_HEIGHT = 256;
+const POINT_COUNT = 8;
 
-pub const mach_module = .app;
-pub const mach_systems = .{ .main, .init, .tick, .deinit };
+fn write_pixels_to_file(pixels: []Pixel, width: usize, height: usize, name: []const u8) !void {
+    const out_file = try std.fs.cwd().createFile(name, .{ .truncate = true });
+    defer out_file.close();
 
-pub const main = mach.schedule(.{
-    .{ mach.Core, .init },
-    .{ App, .init },
-    .{ mach.Core, .main },
-});
-
-window: mach.ObjectID,
-title_timer: mach.time.Timer,
-pipeline: *gpu.RenderPipeline,
-
-pub fn init(core: *mach.Core, app: *App, app_mod: mach.Mod(App)) !void {
-
-    core.on_tick = app_mod.id.tick;
-    core.on_exit = app_mod.id.deinit;
-
-    const window = try core.windows.new(.{
-        .title = "Test",
-    });
-
-    app.* = .{
-        .window = window,
-        .title_timer = try mach.time.Timer.start(),
-        .pipeline = undefined,
-    };
+    const writer = out_file.writer();
+    try writer.print("P6 {} {} 255\n", .{ width, height });
+    for (0..height) |y| {
+        for (0..width) |x| {
+            const pixel = pixels[x + y * width];
+            try writer.print("{c}{c}{c}", .{ pixel.r, pixel.g, pixel.b });
+        }
+    }
 }
 
-fn setupPipeline(core: *mach.Core, app: *App, window_id: mach.ObjectID) !void {
-    var window = core.windows.getValue(window_id);
-    defer core.windows.setValueRaw(window_id, window);
+pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const alloc = gpa.allocator();
+    defer {
+        _ = gpa.deinit();
+    }
 
-    const shader_module = window.device.createShaderModuleWGSL("shader.wgsl", @embedFile("shader.wgsl"));
-    defer shader_module.release();
+    const pixel_buffer = try alloc.alloc(Pixel, GRID_WIDTH * GRID_HEIGHT);
+    defer alloc.free(pixel_buffer);
 
-    const blend = gpu.BlendState {};
-    const color_target = gpu.ColorTargetState {
-        .format = window.framebuffer_format,
-        .blend = &blend,
-    };
+    const points = try alloc.alloc(Point, POINT_COUNT);
+    defer alloc.free(points);
 
-    const fragment = gpu.FragmentState.init(.{
-        .module = shader_module,
-        .entry_point = "frag_main",
-        .targets = &.{color_target},
-    });
+    var rand_seed: u64 = undefined;
+    try std.posix.getrandom(std.mem.asBytes(&rand_seed));
+    var prng = std.Random.DefaultPrng.init(rand_seed);
+    const rand = prng.random();
+    for (points) |*point| {
+        point.x = rand.int(u8);
+        point.y = rand.int(u8);
+        std.log.info("Point: {} {}", .{point.x, point.y});
+    }
 
-    const label = @tagName(mach_module) ++ ".init";
-    const pipeline_descriptor = gpu.RenderPipeline.Descriptor {
-        .label = label,
-        .fragment = &fragment,
-        .vertex = gpu.VertexState {
-            .module = shader_module,
-            .entry_point = "vertex_main",
-        },
-    };
-    app.pipeline = window.device.createRenderPipeline(&pipeline_descriptor);
-}
-
-pub fn tick(app: *App, core: *mach.Core) void {
-    while (core.nextEvent()) |event| {
-        switch (event) {
-            .window_open => |ev| {
-                try setupPipeline(core, app, ev.window_id);
-            },
-            .close => core.exit(),
-            else => {},
+    for (0..GRID_HEIGHT) |y| {
+        for (0..GRID_WIDTH) |x| {
+            var min_distance: usize = 1000;
+            for (points) |point| {
+                const distance_to_point = (@max(x, point.x) - @min(x, point.x)) + @abs(@max(y, point.y) - @min(y, point.y));
+                min_distance = @min(min_distance, distance_to_point);
+            }
+            if (min_distance <= 2) {
+                pixel_buffer[x + y * GRID_WIDTH] = Pixel{ .r = 0, .g = 0, .b = 255 };
+            } else {
+                pixel_buffer[x + y * GRID_WIDTH] = Pixel{ .r = @truncate(x), .g = @truncate(y), .b = 0 };
+            }
         }
     }
 
-    const window = core.windows.getValue(app.window);
-    const back_buffer_view = window.swap_chain.getCurrentTextureView().?;
-    defer back_buffer_view.release();
-
-    const label = @tagName(mach_module) ++ ".tick";
-
-    const encoder = window.device.createCommandEncoder(&.{ .label = label });
-    defer encoder.release();
-
-    const sky_blue_background = gpu.Color { .r = 0.776, .g = 0.988, .b = 1, .a = 1 };
-    const color_attachments = [_]gpu.RenderPassColorAttachment{.{
-        .view = back_buffer_view,
-        .clear_value = sky_blue_background,
-        .load_op = .clear,
-        .store_op = .store,
-    }};
-    const render_pass = encoder.beginRenderPass(&gpu.RenderPassDescriptor.init(.{
-        .label = label,
-        .color_attachments = &color_attachments,
-    }));
-    defer render_pass.release();
-
-    render_pass.setPipeline(app.pipeline);
-    render_pass.draw(3, 1, 0, 0);
-
-    render_pass.end();
-    var command = encoder.finish(&.{ .label = label });
-    defer command.release();
-    window.queue.submit(&[_]*gpu.CommandBuffer{command});
-}
-
-pub fn deinit(app: *App) void {
-    app.pipeline.release();
+    write_pixels_to_file(pixel_buffer, GRID_WIDTH, GRID_HEIGHT, "output.ppm") catch |err| {
+        std.log.err("Failed to write file: {}", .{err});
+    };
 }

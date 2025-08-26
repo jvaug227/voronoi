@@ -10,17 +10,9 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    const mach_dep = b.dependency("mach", .{
-        .target = target,
-        .optimize = optimize,
-    });
-    exe_mod.addImport("mach", mach_dep.module("mach"));
-
-    const exe = @import("mach").addExecutable(mach_dep.builder, .{
+    const exe = b.addExecutable(.{
         .name = "voronoi",
-        .app = exe_mod,
-        .target = target,
-        .optimize = optimize,
+        .root_module = exe_mod,
     });
 
     b.installArtifact(exe);
