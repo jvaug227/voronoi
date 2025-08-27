@@ -11,7 +11,7 @@ const Point = struct {
 };
 const GRID_WIDTH = 1024;
 const GRID_HEIGHT = 1024;
-const POINT_COUNT = 32;
+const POINT_COUNT = 64;
 const POINT_THRESHOLD = 0.005;
 
 fn write_pixels_to_file(pixels: []Pixel, width: usize, height: usize, name: []const u8) !void {
@@ -23,10 +23,14 @@ fn write_pixels_to_file(pixels: []Pixel, width: usize, height: usize, name: []co
     const writer = buf_writer.writer();
     try writer.print("P6 {} {} 255\n", .{ width, height });
     for (0..height) |y| {
-        for (0..width) |x| {
-            const pixel = pixels[x + y * width];
-            try writer.print("{c}{c}{c}", .{ pixel.r, pixel.g, pixel.b });
-        }
+        const start = y * width;
+        const end = start + width;
+        const pixel_bytes: []u8 = @ptrCast(pixels[start..end]);
+        _ = try writer.write(pixel_bytes);
+        // for (0..width) |x| {
+        //     const pixel = pixels[x + y * width];
+        //     try writer.print("{c}{c}{c}", .{ pixel.r, pixel.g, pixel.b });
+        // }
     }
     try buf_writer.flush();
 }
@@ -63,7 +67,12 @@ pub fn main() !void {
             for (0.., points) |idx, point| {
                 const px: f32 = point.x;
                 const py: f32 = point.y;
-                const sq_distance_to_point = (std.math.pow(f32, @abs(fx - px), 2.0) + std.math.pow(f32, @abs(fy - py), 2.0));
+                // Eudlidian: sqrt( x^2 + y^2 )
+                const diff_x: f32 = @abs(fx - px);
+                const diff_y: f32 = @abs(fy - py);
+                const sq_distance_to_point: f32 = (diff_x*diff_x) + (diff_y*diff_y);
+                // Manhattan: sqrt( (x + y)^2 => x^2 + 2xy + y^2)
+                // const sq_distance_to_point = std.math.pow(f32, (diff_x + diff_y), 2.0);
                 if (sq_distance_to_point < (min_distance * min_distance)) {
                     min_distance = @sqrt(sq_distance_to_point);
                     min_point = idx;
